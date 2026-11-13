@@ -367,8 +367,8 @@ The whole run took about 62 seconds here (measured on a loaded laptop).
 - The double-plan search is restricted to n2 = n1 or 2 n1, r1 = c2 + 1 and c2 at most three above
   the single plan's acceptance number (and at most 12 unless `max_c2` is raised); it is the best
   plan in that family, not among all double plans.
-- The sequential plan's alpha and beta are nominal. Read the exact column, and expect truncation
-  to raise the risks.
+- The sequential plan's alpha and beta are nominal. Read the exact column; truncation changes
+  the risks again (in the tested example their sum goes up).
 - When the two rates are very close the tool gives up rather than run for long: the single-plan
   search refuses a requirement whose acceptance number would exceed 2000, and the exact sequential
   computation stops after a fixed amount of work and reports the probability left undecided.
@@ -386,8 +386,7 @@ The whole run took about 62 seconds here (measured on a loaded laptop).
 
 - [labelfuse](https://github.com/vipul21435/labelfuse) aggregates several annotators' labels into
   one; qasample then decides how much of the result to check.
-- [rubricops](https://github.com/vipul21435/rubricops) covers rubrics and inter-rater agreement,
-  which is where an inspector's error rates come from.
+- [rubricops](https://github.com/vipul21435/rubricops) covers rubrics and inter-rater agreement.
 - [evalstats](https://github.com/vipul21435/evalstats) gives error bars and paired comparisons for
   evaluation scores.
 - [sftlint](https://github.com/vipul21435/sftlint) lints chat and tool-calling datasets
