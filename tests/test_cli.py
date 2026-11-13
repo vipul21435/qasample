@@ -296,3 +296,13 @@ def test_plan_double_outside_the_search_range_still_prints_the_single_plan(capsy
         "json",
     )
     assert json.loads(out)["double"] is None
+
+
+def test_module_entry_point(monkeypatch, capsys):
+    import runpy
+
+    monkeypatch.setattr("sys.argv", ["qasample", "bound", "--n", "50", "--bad", "1"])
+    with pytest.raises(SystemExit) as stop:
+        runpy.run_module("qasample", run_name="__main__")
+    assert stop.value.code == 0
+    assert "1 bad of 50 inspected" in capsys.readouterr().out

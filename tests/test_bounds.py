@@ -70,12 +70,13 @@ def test_zero_defect_sample_size():
 def test_clopper_pearson_coverage_by_seeded_simulation():
     rng = random.Random(11)
     n = 60
+    table = [clopper_pearson(k, n, 0.9) for k in range(n + 1)]
     for rate in (0.01, 0.07, 0.3):
         hits = 0
         trials = 1500
         for _ in range(trials):
             bad = sum(rng.random() < rate for _ in range(n))
-            low, high = clopper_pearson(bad, n, 0.9)
+            low, high = table[bad]
             hits += low <= rate <= high
         # exact intervals are conservative: coverage should not fall below nominal
         # by more than simulation noise (3 standard errors is about 0.023)

@@ -21,6 +21,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterator
 from dataclasses import dataclass
+from functools import cached_property
 
 _EPS = 1e-9
 _MASS_STOP = 1e-13
@@ -76,23 +77,23 @@ class SequentialPlan:
 
     # --- the two lines -------------------------------------------------
 
-    @property
+    @cached_property
     def _g1(self) -> float:
         return math.log(self.rejectable / self.acceptable)
 
-    @property
+    @cached_property
     def _g2(self) -> float:
         return math.log((1.0 - self.acceptable) / (1.0 - self.rejectable))
 
-    @property
+    @cached_property
     def slope(self) -> float:
         return self._g2 / (self._g1 + self._g2)
 
-    @property
+    @cached_property
     def h_accept(self) -> float:
         return math.log((1.0 - self.producer_risk) / self.consumer_risk) / (self._g1 + self._g2)
 
-    @property
+    @cached_property
     def h_reject(self) -> float:
         return math.log((1.0 - self.consumer_risk) / self.producer_risk) / (self._g1 + self._g2)
 

@@ -71,9 +71,12 @@ def test_corrected_bounds_cover_the_true_rate_in_simulation():
     rng = random.Random(2)
     rate, n, trials, hits = 0.08, 150, 1000, 0
     q = insp.apparent(rate)
+    table = {}
     for _ in range(trials):
         flagged = sum(rng.random() < q for _ in range(n))
-        low, high = insp.corrected_bounds(flagged, n, 0.9)
+        if flagged not in table:
+            table[flagged] = insp.corrected_bounds(flagged, n, 0.9)
+        low, high = table[flagged]
         hits += low <= rate <= high
     assert hits / trials >= 0.9 - 0.03
 
