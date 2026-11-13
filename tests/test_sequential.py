@@ -1,3 +1,4 @@
+import itertools
 import math
 import random
 
@@ -188,3 +189,37 @@ def test_validation_and_dict():
         PLAN.exact(lot_size=10, bad=11)
     assert PLAN.to_dict()["slope"] == pytest.approx(PLAN.slope)
     assert set(PLAN.exact(0.02).to_dict()) == {"accept", "reject", "undecided", "asn", "max_n"}
+
+
+def test_exact_matches_enumeration_of_every_path():
+    # every pass/fail sequence of length 12, weighted by its binomial probability
+    plan = SequentialPlan(0.05, 0.40, 0.10, 0.10, max_n=12)
+    for rate in (0.05, 0.2, 0.4):
+        accept = asn = 0.0
+        for path in itertools.product((False, True), repeat=12):
+            weight = math.prod(rate if flag else 1 - rate for flag in path)
+            ok, used = plan.run(iter(path))
+            accept += weight * ok
+            asn += weight * used
+        res = plan.exact(rate)
+        assert res.accept == pytest.approx(accept, rel=1e-10)
+        assert res.asn == pytest.approx(asn, rel=1e-10)
+        assert res.undecided == pytest.approx(0.0, abs=1e-15)
+
+
+def test_finite_batch_exact_matches_enumeration_of_every_arrangement():
+    # 14 records with 4 bad: every placement of the bad ones is equally likely
+    plan = SequentialPlan(0.05, 0.40, 0.10, 0.10)
+    lot, bad = 14, 4
+    accept = asn = 0.0
+    count = 0
+    for places in itertools.combinations(range(lot), bad):
+        order = [i in places for i in range(lot)]
+        ok, used = plan.run(iter(order))
+        accept += ok
+        asn += used
+        count += 1
+    res = plan.exact(lot_size=lot, bad=bad)
+    assert count == math.comb(lot, bad)
+    assert res.accept == pytest.approx(accept / count, rel=1e-10)
+    assert res.asn == pytest.approx(asn / count, rel=1e-10)

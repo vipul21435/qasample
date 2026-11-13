@@ -1,3 +1,5 @@
+import itertools
+import math
 import random
 
 import pytest
@@ -136,3 +138,18 @@ def test_validation():
         find_double_plan(0.01, 0.06, ratios=(0,))
     with pytest.raises(ValueError):
         find_double_plan(0.01, 0.012, max_c2=1)
+
+
+def test_double_plan_matches_enumeration_of_every_arrangement():
+    plan = DoublePlan(4, 0, 2, 5, 1)
+    lot, bad = 13, 3
+    accepted = used = count = 0
+    for places in itertools.combinations(range(lot), bad):
+        order = [i in places for i in range(lot)]
+        ok, n = plan.run(iter(order))
+        accepted += ok
+        used += n
+        count += 1
+    assert count == math.comb(lot, bad)
+    assert plan.accept_prob_lot(lot, bad) == pytest.approx(accepted / count, rel=1e-10)
+    assert plan.asn_lot(lot, bad) == pytest.approx(used / count, rel=1e-10)
