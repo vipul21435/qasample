@@ -223,3 +223,15 @@ def test_finite_batch_exact_matches_enumeration_of_every_arrangement():
     assert count == math.comb(lot, bad)
     assert res.accept == pytest.approx(accept / count, rel=1e-10)
     assert res.asn == pytest.approx(asn / count, rel=1e-10)
+
+
+def test_very_close_rates_stop_after_bounded_work(monkeypatch):
+    import qasample.sequential as module
+
+    monkeypatch.setattr(module, "_WORK_LIMIT", 20_000)
+    plan = SequentialPlan(0.01, 0.0101)
+    res = plan.exact(0.01005)
+    assert res.undecided > 0.5
+    assert res.accept + res.reject + res.undecided == pytest.approx(1.0, abs=1e-9)
+    with pytest.raises(ValueError):
+        plan.exact(lot_size=0, bad=0)

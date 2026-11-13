@@ -492,6 +492,7 @@ def cmd_sequential(args: argparse.Namespace) -> tuple[dict, str]:
                 "wald_accept": plan.wald_oc(rate),
                 "wald_asn": plan.wald_asn(rate),
                 "longest_run": res.max_n,
+                "undecided": res.undecided,
             }
         )
     upto = args.rows if args.rows else min(args.truncate or 10**9, 3 * plan.first_accept_n())
@@ -533,6 +534,14 @@ def cmd_sequential(args: argparse.Namespace) -> tuple[dict, str]:
             [[r["rate"], r["accept"], r["asn"], r["wald_accept"], r["wald_asn"]] for r in rows],
         ),
     ]
+    open_mass = max(r["undecided"] for r in rows)
+    if open_mass > 1e-9:
+        lines += [
+            "",
+            f"The exact computation stopped early: up to {fmt(open_mass)} of the probability is "
+            "still undecided after the longest run it followed, so P(accept) and the average are "
+            "lower bounds here. The two rates are too close for this plan to finish quickly.",
+        ]
     return payload, "\n".join(lines)
 
 

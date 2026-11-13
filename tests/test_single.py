@@ -201,3 +201,11 @@ def test_design_to_dict_round_trip():
     assert math.isclose(d["acceptable"], 0.01)
     d2 = find_single_plan(0.01, 0.06).to_dict()
     assert "lot_size" not in d2
+
+
+def test_rates_too_close_are_refused_quickly(monkeypatch):
+    import qasample.single as module
+
+    monkeypatch.setattr(module, "_MAX_ACCEPT_NUMBER", 30)
+    with pytest.raises(ValueError, match="too close"):
+        find_single_plan(0.01, 0.0115)

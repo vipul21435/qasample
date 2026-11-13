@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from .dist import binom_cdf, hypergeom_cdf, hypergeom_pmf, hypergeom_support
 
 _GUARD = 1e-9
-_MAX_ACCEPT_NUMBER = 100_000
+_MAX_ACCEPT_NUMBER = 2000
 _MAX_SAMPLE = 10**9
 
 
@@ -197,7 +197,10 @@ def find_single_plan(
                     achieved_producer_risk=1.0 - pa_good,
                     achieved_consumer_risk=binom_cdf(c, n, rejectable),
                 )
-        raise ValueError("no plan found: the two error rates are too close together")
+        raise ValueError(
+            "no plan found: the two error rates are too close together (the acceptance number "
+            f"would exceed {_MAX_ACCEPT_NUMBER})"
+        )
 
     if lot_size < 1:
         raise ValueError("lot_size must be at least 1")

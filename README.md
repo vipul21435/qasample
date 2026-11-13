@@ -9,8 +9,8 @@ Checking every record of a labelled batch costs too much, and checking "a few" g
 risk. How many records are enough depends on the size of the batch, on the error rate that is
 acceptable, on the error rate that must be caught, and on how often each of the two wrong decisions
 may happen. Stopping an inspection early because it looks fine changes those risks unless the plan
-was built to allow it, and an inspector who misses errors shifts them again. The arithmetic is
-old and well understood in manufacturing; it is rarely applied to datasets.
+was built to allow it, and an inspector who misses errors shifts them again. The arithmetic comes
+from statistical quality control in manufacturing; here it is applied to batches of records.
 
 ## Install
 
@@ -259,7 +259,7 @@ and published attribute-sampling standards such as MIL-STD-105 and ANSI/ASQ Z1.4
 tables or their switching rules; it computes plans directly from the two error rates and the two
 risks.
 
-**Checks.** `uv run --extra dev pytest -q` runs 234 tests with 99 % line coverage
+**Checks.** `uv run --extra dev pytest -q` runs 237 tests with 99 % line coverage
 (`--cov=qasample`). Plans are compared with exhaustive enumeration, tails and intervals with scipy
 (a test-only dependency), the sequential and double plans with enumeration of every inspection
 order on small batches, with Wald's closed forms and with seeded simulation, and interval coverage
@@ -369,6 +369,9 @@ The whole run took about 62 seconds here (measured on a loaded laptop).
   plan in that family, not among all double plans.
 - The sequential plan's alpha and beta are nominal. Read the exact column, and expect truncation
   to raise the risks.
+- When the two rates are very close the tool gives up rather than run for long: the single-plan
+  search refuses a requirement whose acceptance number would exceed 2000, and the exact sequential
+  computation stops after a fixed amount of work and reports the probability left undecided.
 - The inspector correction uses the binomial model only and assumes the inspector's two error
   rates are the same for every record and independent between records.
 - Every probability assumes the sample is drawn at random from the batch. A sample taken from the

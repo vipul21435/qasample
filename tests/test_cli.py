@@ -306,3 +306,12 @@ def test_module_entry_point(monkeypatch, capsys):
         runpy.run_module("qasample", run_name="__main__")
     assert stop.value.code == 0
     assert "1 bad of 50 inspected" in capsys.readouterr().out
+
+
+def test_sequential_reports_an_unfinished_computation(monkeypatch, capsys):
+    import qasample.sequential as module
+
+    monkeypatch.setattr(module, "_WORK_LIMIT", 20_000)
+    code, out, _ = run(capsys, "sequential", "--acceptable", "0.01", "--rejectable", "0.0101")
+    assert code == 0
+    assert "stopped early" in out

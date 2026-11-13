@@ -26,6 +26,7 @@ from functools import cached_property
 _EPS = 1e-9
 _MASS_STOP = 1e-13
 _HARD_LIMIT = 2_000_000
+_WORK_LIMIT = 20_000_000
 
 
 @dataclass(frozen=True)
@@ -155,22 +156,27 @@ class SequentialPlan:
 
         Give ``rate`` for the binomial model, or ``lot_size`` and ``bad`` for a
         finite batch sampled without replacement (which ends at the latest
-        when the batch is exhausted).
+        when the batch is exhausted). When the two rates are so close that
+        runs become very long, the computation stops after a fixed amount of
+        work and reports the probability still ``undecided``.
         """
         if lot_size is None:
             if rate is None or not 0.0 <= rate <= 1.0:
                 raise ValueError("rate must be in [0, 1]")
             limit = self.max_n if self.max_n is not None else _HARD_LIMIT
         else:
+            if lot_size < 1:
+                raise ValueError("lot_size must be at least 1")
             if bad is None or not 0 <= bad <= lot_size:
                 raise ValueError("bad must be between 0 and lot_size")
             limit = lot_size if self.max_n is None else min(self.max_n, lot_size)
         forced_end = self.max_n is not None or lot_size is not None
         state: dict[int, float] = {0: 1.0}
         accept = reject = asn = 0.0
-        n = 0
+        n = work = 0
         while state and n < limit:
             n += 1
+            work += len(state)
             nxt: dict[int, float] = {}
             for d, mass in state.items():
                 if lot_size is None:
@@ -201,6 +207,8 @@ class SequentialPlan:
                 else:
                     state[d] = mass
             if not forced_end and sum(state.values()) < _MASS_STOP:
+                break
+            if work > _WORK_LIMIT:
                 break
         undecided = sum(state.values())
         asn += n * undecided
