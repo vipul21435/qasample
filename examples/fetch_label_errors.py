@@ -4,9 +4,9 @@ JSONL file per test set with a good/bad flag for every record.
 Source: https://github.com/cleanlab/label-errors (Apache-2.0). Nothing from it is stored in
 this repository; this script fetches the files into a directory of your choice.
 
-A record is marked bad when it was sent for human verification and fewer than three of the
-five reviewers kept its given label. Records that were never sent for verification are
-marked good, so the error rate of each file is a lower bound on the real one.
+A record is marked bad when it was sent for verification and fewer than three of its five
+votes kept its given label. Records that were never sent for verification are marked good,
+so the error rate of each file is a lower bound on the real one.
 
 Usage:  python examples/fetch_label_errors.py OUT_DIR
 """

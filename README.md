@@ -259,17 +259,23 @@ and published attribute-sampling standards such as MIL-STD-105 and ANSI/ASQ Z1.4
 tables or their switching rules; it computes plans directly from the two error rates and the two
 risks.
 
+**Checks.** `uv run --extra dev pytest -q` runs 234 tests with 99 % line coverage
+(`--cov=qasample`). Plans are compared with exhaustive enumeration, tails and intervals with scipy
+(a test-only dependency), the sequential and double plans with enumeration of every inspection
+order on small batches, with Wald's closed forms and with seeded simulation, and interval coverage
+is checked by enumeration and seeded simulation.
+
 ## Results on public data
 
-Data: the human verification files published with C. G. Northcutt, A. Athalye and J. Mueller,
+Data: the verification files published with C. G. Northcutt, A. Athalye and J. Mueller,
 "Pervasive Label Errors in Test Sets Destabilize Machine Learning Benchmarks", NeurIPS 2021 Track
 on Datasets and Benchmarks ([arXiv:2103.14749](https://arxiv.org/abs/2103.14749)), in the
 repository [cleanlab/label-errors](https://github.com/cleanlab/label-errors), licence Apache-2.0
 as stated on its page. Nothing from that repository is stored here; `examples/fetch_label_errors.py`
 downloads the files. For each test set the paper's algorithm flagged candidate label errors and
-each candidate was shown to five reviewers. Here a record counts as bad when it was sent for
-verification and fewer than three of the five reviewers kept its given label; every record that
-was never sent for verification counts as good. The error rates below are therefore lower bounds
+each candidate then received five votes on its label. Here a record counts as bad when it was
+sent for verification and fewer than three of its five votes kept the given label; every record
+that was never sent for verification counts as good. The error rates below are therefore lower bounds
 on the real ones, and the definition is applied here to the published vote counts rather than
 copied from the paper's tables. Six of the ten test sets are used. AudioSet and Amazon Reviews
 store their votes in a different layout, and for Caltech-256 and QuickDraw the repository's label
@@ -350,12 +356,12 @@ values are exact for the finite batch):
 | imagenet | 0.0583 | 0.0547 | 0.0547 | 57.9709 | 58.4465 |
 | cifar100 | 0.0585 | 0.0538 | 0.0534 | 57.4391 | 58.1117 |
 
-The whole run took about 68 seconds here (measured on a loaded laptop).
+The whole run took about 62 seconds here (measured on a loaded laptop).
 
 ## Limitations
 
 - The good/bad flags of the public data are lower bounds: records that were never sent for
-  verification are counted as good, and a majority of five reviewers can itself be wrong.
+  verification are counted as good, and a majority of five votes can itself be wrong.
 - Only pass/fail (attribute) plans. No variables plans, no plans with more than two stages, no
   curtailed double sampling, and none of the switching rules or tables of the published standards.
 - The double-plan search is restricted to n2 = n1 or 2 n1, r1 = c2 + 1 and c2 at most three above
@@ -383,16 +389,6 @@ The whole run took about 68 seconds here (measured on a loaded laptop).
   evaluation scores.
 - [sftlint](https://github.com/vipul21435/sftlint) lints chat and tool-calling datasets
   mechanically, before any sampling is needed.
-
-## Tests
-
-```
-uv run --extra dev pytest -q
-```
-
-224 tests, 99 % line coverage (`uv run --extra dev pytest -q --cov=qasample`). Plans are checked against exhaustive enumeration, tails and intervals against scipy
-(a test-only dependency), the sequential plan against Wald's closed forms and seeded simulation,
-and interval coverage by enumeration and seeded simulation.
 
 ## Licence
 
