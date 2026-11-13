@@ -56,3 +56,178 @@ def test_rate_argument_is_validated(capsys):
     with pytest.raises(SystemExit):
         main(["plan", "--acceptable", "1.5", "--rejectable", "0.5"])
     capsys.readouterr()
+
+
+def write_audit(tmp_path, rows, name="audit.jsonl"):
+    path = tmp_path / name
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    return str(path)
+
+
+def test_plan_double_and_inspector(capsys):
+    code, out, _ = run(
+        capsys, "plan", "--acceptable", "0.01", "--rejectable", "0.06", "--double",
+        "--miss-rate", "0.3", "--format", "json",
+    )
+    assert code == 0
+    data = json.loads(out)
+    assert data["double"]["asn_acceptable"] < data["single"]["n"]
+    assert data["inspector"]["naive_risks"]["consumer_risk"] > 0.10
+    assert data["inspector"]["adjusted"]["consumer_risk"] <= 0.10
+    assert data["inspector"]["adjusted"]["n"] > data["single"]["n"]
+    code, out, _ = run(
+        capsys, "plan", "--acceptable", "0.01", "--rejectable", "0.06", "--double",
+        "--false-alarm-rate", "0.01",
+    )
+    assert "Double plan" in out and "designed for this inspector" in out
+    code, _, err = run(
+        capsys, "plan", "--acceptable", "0.01", "--rejectable", "0.06", "--batch", "500",
+        "--miss-rate", "0.1",
+    )
+    assert code == 2 and "binomial" in err
+
+
+def test_oc_chart(tmp_path, capsys):
+    pytest.importorskip("matplotlib")
+    target = tmp_path / "oc.png"
+    code, out, _ = run(capsys, "oc", "--n", "60", "--c", "1", "--chart", str(target))
+    assert code == 0
+    assert target.read_bytes()[:4] == b"\x89PNG"
+    assert "Chart written" in out
+    code, _, err = run(capsys, "oc", "--n", "60", "--c", "1", "--points", "1")
+    assert code == 2
+
+
+def test_bound_from_counts(capsys):
+    code, out, _ = run(
+        capsys, "bound", "--n", "200", "--bad", "0", "--batch", "5000", "--target", "0.02",
+        "--format", "json",
+    )
+    assert code == 0
+    data = json.loads(out)
+    assert data["clopper_pearson"][0] == 0.0
+    assert data["upper_bound"] == pytest.approx(1 - 0.05 ** (1 / 200))
+    assert data["zero_defects"]["approx"] == pytest.approx(0.015, rel=0.01)
+    assert data["batch"]["bad_left"][0] == 0
+    assert data["batch"]["bad_left_upper"] <= data["batch"]["bad_left"][1]
+    assert 0.9 < data["target"]["probability"] <= 1.0
+    code, out, _ = run(capsys, "bound", "--n", "200", "--bad", "0")
+    assert "rule of three" in out
+    code, _, err = run(capsys, "bound", "--n", "200")
+    assert code == 2 and "--input" in err
+
+
+def test_bound_from_file_with_inspector(tmp_path, capsys):
+    rows = [{"result": "pass"}] * 45 + [{"result": "wrong label"}] * 4 + [{"result": "empty"}]
+    path = write_audit(tmp_path, rows)
+    code, out, _ = run(
+        capsys, "bound", "--input", path, "--miss-rate", "0.2", "--batch", "400",
+    )
+    assert code == 0
+    assert "5 bad of 50 inspected" in out
+    assert "| wrong label | 4 |" in out
+    assert "Corrected for an inspector" in out
+    assert "Batch of 400" in out
+    code, out, _ = run(
+        capsys, "bound", "--input", path, "--bad-values", "empty", "--format", "json"
+    )
+    assert json.loads(out)["bad"] == 1
+
+
+def test_sequential_command(capsys):
+    code, out, _ = run(capsys, "sequential", "--acceptable", "0.01", "--rejectable", "0.06")
+    assert code == 0
+    assert "Sequential plan" in out and "Wald's approximation" in out
+    code, out, _ = run(
+        capsys, "sequential", "--acceptable", "0.01", "--rejectable", "0.06", "--truncate", "90",
+        "--batch", "600", "--rows", "20", "--format", "json",
+    )
+    data = json.loads(out)
+    assert len(data["numbers"]) == 20
+    assert data["plan"]["max_n"] == 90
+    for row in data["operating_characteristic"]:
+        assert row["longest_run"] <= 90
+        assert 0.0 <= row["accept"] <= 1.0
+    code, out, _ = run(
+        capsys, "sequential", "--acceptable", "0.01", "--rejectable", "0.06", "--truncate", "90",
+    )
+    assert "Truncated at 90" in out
+    code, _, err = run(capsys, "sequential", "--acceptable", "0", "--rejectable", "0.06")
+    assert code == 2
+
+
+def test_stratify_allocation(capsys):
+    code, out, _ = run(
+        capsys, "stratify", "--sizes", "web=6000,app=4000", "--total", "300", "--method",
+        "neyman", "--prior", "web=0.01,app=0.2", "--format", "json",
+    )
+    assert code == 0
+    alloc = json.loads(out)["allocation"]
+    assert sum(alloc.values()) == 300 and alloc["app"] > alloc["web"]
+    code, out, _ = run(capsys, "stratify", "--sizes", "web=6000,app=4000", "--total", "300")
+    assert "| web | 6000 | - | 180 |" in out
+    code, _, err = run(capsys, "stratify", "--sizes", "web=6000,app=4000")
+    assert code == 2 and "--total" in err
+    with pytest.raises(SystemExit):
+        main(["stratify", "--sizes", "web", "--total", "5"])
+    with pytest.raises(SystemExit):
+        main(["stratify", "--sizes", "web=many", "--total", "5"])
+    capsys.readouterr()
+
+
+def test_stratify_estimate_from_file(tmp_path, capsys):
+    rows = (
+        [{"result": "ok", "stratum": "web"}] * 48
+        + [{"result": "bad", "stratum": "web"}] * 2
+        + [{"result": "ok", "stratum": "app"}] * 27
+        + [{"result": "bad", "stratum": "app"}] * 3
+    )
+    path = write_audit(tmp_path, rows)
+    code, out, _ = run(
+        capsys, "stratify", "--sizes", "web=6000,app=4000", "--input", path, "--format", "json",
+    )
+    assert code == 0
+    data = json.loads(out)
+    assert data["rate"] == pytest.approx(0.6 * 0.04 + 0.4 * 0.1)
+    assert data["exact_interval"][0] <= data["rate"] <= data["exact_interval"][1]
+    code, out, _ = run(capsys, "stratify", "--sizes", "web=6000,app=4000", "--input", path)
+    assert "Combined error rate" in out and "normal approximation" in out
+    code, _, err = run(capsys, "stratify", "--sizes", "web=6000", "--input", path)
+    assert code == 2 and "app" in err
+
+
+def flagged_batch(tmp_path):
+    rows = [{"bad": i % 25 == 0} for i in range(1500)]
+    return write_audit(tmp_path, rows, "batch.jsonl")
+
+
+def test_replay_command_for_each_plan_type(tmp_path, capsys):
+    path = flagged_batch(tmp_path)
+    base = ["replay", "--input", path, "--column", "bad", "--audits", "400", "--format", "json"]
+    req = ["--acceptable", "0.01", "--rejectable", "0.08"]
+    variants = {
+        "single": [*req],
+        "single-finite": [*req, "--finite"],
+        "double": [*req, "--plan", "double"],
+        "sequential": [*req, "--plan", "sequential", "--truncate", "120"],
+        "explicit": ["--n", "50", "--c", "2"],
+        "explicit-double": ["--double-plan", "30,0,3,60,2"],
+    }
+    for name, extra in variants.items():
+        code, out, _ = run(capsys, *base, *extra)
+        assert code == 0, name
+        data = json.loads(out)
+        assert data["lot_size"] == 1500 and data["bad"] == 60
+        assert abs(data["accept_rate"] - data["expected_accept"]) < 5 * data["accept_se"] + 1e-9
+    code, out, _ = run(capsys, "replay", "--input", path, "--column", "bad", *req, "--audits", "50")
+    assert "accept rate" in out and "single n=" in out
+    code, _, err = run(capsys, "replay", "--input", path, "--column", "bad")
+    assert code == 2 and "plan" in err
+    with pytest.raises(SystemExit):
+        main(["replay", "--input", path, "--double-plan", "1,2,3"])
+    capsys.readouterr()
+
+
+def test_missing_file_is_reported(capsys):
+    code, _, err = run(capsys, "bound", "--input", "no-such-file.jsonl")
+    assert code == 2 and "error" in err
