@@ -181,9 +181,12 @@ def test_ati_between_sample_and_batch():
 
 def test_tiny_batch_still_gets_a_plan():
     # 10 records: "at most 1 %" means 0 bad, "at least 5 %" means 1 bad or more
-    design = find_single_plan(0.01, 0.05, lot_size=10)
+    # with one bad record, a sample of n misses it with probability (10 - n) / 10
+    design = find_single_plan(0.01, 0.05, consumer_risk=0.15, lot_size=10)
     assert (design.acceptable_bad, design.rejectable_bad) == (0, 1)
     assert (design.plan.n, design.plan.c) == (9, 0)
+    assert design.achieved_consumer_risk == pytest.approx(0.1)
+    assert design.achieved_producer_risk == pytest.approx(0.0)
 
 
 def test_zero_sample_plan_always_accepts():
