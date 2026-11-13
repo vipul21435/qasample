@@ -3,6 +3,7 @@ import json
 import pytest
 
 from qasample.cli import main
+from qasample.double import find_double_plan
 from qasample.single import find_single_plan
 
 
@@ -231,3 +232,67 @@ def test_replay_command_for_each_plan_type(tmp_path, capsys):
 def test_missing_file_is_reported(capsys):
     code, _, err = run(capsys, "bound", "--input", "no-such-file.jsonl")
     assert code == 2 and "error" in err
+
+
+def test_oc_for_a_double_plan(tmp_path, capsys):
+    code, out, _ = run(
+        capsys, "oc", "--double-plan", "69,0,4,69,3", "--rates", "0.01,0.05", "--format", "json"
+    )
+    assert code == 0
+    data = json.loads(out)
+    plan = find_double_plan(0.01, 0.05).plan
+    assert data["double"] == plan.to_dict()
+    assert data["curve"][0]["accept"] == pytest.approx(plan.accept_prob(0.01))
+    assert data["curve"][1]["asn"] == pytest.approx(plan.asn(0.05))
+    code, out, _ = run(
+        capsys, "oc", "--double-plan", "69,0,4,69,3", "--batch", "1000", "--points", "3"
+    )
+    assert code == 0 and "double plan n1 = 69" in out and "| bad records |" in out
+    code, out, _ = run(capsys, "oc", "--double-plan", "69,0,4,69,3", "--points", "3")
+    assert "| error rate | P(accept) | average records inspected |" in out
+    code, _, err = run(capsys, "oc", "--n", "50")
+    assert code == 2 and "--double-plan" in err
+    pytest.importorskip("matplotlib")
+    target = tmp_path / "double.png"
+    code, _, _ = run(capsys, "oc", "--double-plan", "69,0,4,69,3", "--chart", str(target))
+    assert code == 0 and target.read_bytes()[:4] == b"\x89PNG"
+
+
+def test_sequential_rates_option(capsys):
+    code, out, _ = run(
+        capsys, "sequential", "--acceptable", "0.01", "--rejectable", "0.06", "--rates",
+        "0.02,0.03,0.04", "--format", "json",
+    )
+    rows = json.loads(out)["operating_characteristic"]
+    assert [r["rate"] for r in rows] == [0.02, 0.03, 0.04]
+    assert rows[0]["accept"] > rows[1]["accept"] > rows[2]["accept"]
+
+
+def test_bound_with_inspector_calibration(capsys):
+    code, out, _ = run(
+        capsys, "bound", "--n", "200", "--bad", "12", "--calibration", "6,40,2,200",
+        "--format", "json",
+    )
+    assert code == 0
+    data = json.loads(out)
+    est = data["inspector_estimated"]
+    assert est["miss_rate"] == pytest.approx(0.15)
+    low, high = est["interval"]
+    assert low < (12 / 200 - 0.01) / (1 - 0.15 - 0.01) < high
+    assert high - low > data["clopper_pearson"][1] - data["clopper_pearson"][0]
+    code, out, _ = run(capsys, "bound", "--n", "200", "--bad", "12", "--calibration", "6,40,2,200")
+    assert "Inspector calibration" in out
+    with pytest.raises(SystemExit):
+        main(["bound", "--n", "200", "--bad", "12", "--calibration", "6,40"])
+    capsys.readouterr()
+
+
+def test_plan_double_outside_the_search_range_still_prints_the_single_plan(capsys):
+    code, out, _ = run(capsys, "plan", "--acceptable", "0.02", "--rejectable", "0.03", "--double")
+    assert code == 0
+    assert "Single plan" in out and "Double plan: no double plan found" in out
+    code, out, _ = run(
+        capsys, "plan", "--acceptable", "0.02", "--rejectable", "0.03", "--double", "--format",
+        "json",
+    )
+    assert json.loads(out)["double"] is None

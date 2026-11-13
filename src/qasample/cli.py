@@ -15,7 +15,13 @@ from .bounds import (
     wilson,
 )
 from .double import DoublePlan, find_double_plan
-from .inspector import Inspector, find_single_plan_with_inspector, risks_under_inspector
+from .inspector import (
+    Inspector,
+    corrected_bounds_estimated,
+    estimate_inspector,
+    find_single_plan_with_inspector,
+    risks_under_inspector,
+)
 from .records import load_records
 from .replay import replay
 from .report import fmt, md_table, to_json
@@ -64,6 +70,16 @@ def _double_spec(text: str) -> DoublePlan:
         return DoublePlan(n1, c1, r1, n2, c2)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(f"expected n1,c1,r1,n2,c2: {exc}") from exc
+
+
+def _calibration(text: str) -> tuple[int, int, int, int]:
+    try:
+        missed, known_bad, alarms, known_good = (int(part) for part in text.split(","))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"expected missed,known_bad,false_alarms,known_good: {exc}"
+        ) from exc
+    return missed, known_bad, alarms, known_good
 
 
 def _word_set(text: str) -> set[str]:
@@ -178,25 +194,32 @@ def cmd_plan(args: argparse.Namespace) -> tuple[dict, str]:
         )
 
     if args.double:
-        dd = find_double_plan(
-            args.acceptable, args.rejectable, args.producer_risk, args.consumer_risk, args.batch
-        )
-        dp = dd.plan
-        payload["double"] = dd.to_dict()
-        lines += [
-            "",
-            f"Double plan ({dd.model} model): inspect n1 = {dp.n1}; accept if at most "
-            f"c1 = {dp.c1} are bad, reject if {dp.r1} or more; otherwise inspect n2 = {dp.n2} "
-            f"more and accept if the total is at most c2 = {dp.c2}.",
-            "",
-            md_table(
-                ["batch error rate", "P(accept)", "average records inspected", "single plan n"],
-                [
-                    [args.acceptable, 1 - dd.achieved_producer_risk, dd.asn_acceptable, plan.n],
-                    [args.rejectable, dd.achieved_consumer_risk, dd.asn_rejectable, plan.n],
-                ],
-            ),
-        ]
+        try:
+            dd = find_double_plan(
+                args.acceptable, args.rejectable, args.producer_risk, args.consumer_risk, args.batch
+            )
+        except ValueError as exc:
+            payload["double"] = None
+            lines += ["", f"Double plan: {exc}."]
+        else:
+            dp = dd.plan
+            payload["double"] = dd.to_dict()
+            lines += [
+                "",
+                f"Double plan ({dd.model} model): inspect n1 = {dp.n1}; accept if at most "
+                f"c1 = {dp.c1} are bad, reject if {dp.r1} or more; otherwise inspect "
+                f"n2 = {dp.n2} more and accept if the total is at most c2 = {dp.c2}.",
+                "",
+                md_table(
+                    ["batch error rate", "P(accept)", "average records inspected",
+                     "single plan n"],
+                    [
+                        [args.acceptable, 1 - dd.achieved_producer_risk, dd.asn_acceptable,
+                         plan.n],
+                        [args.rejectable, dd.achieved_consumer_risk, dd.asn_rejectable, plan.n],
+                    ],
+                ),
+            ]
 
     if args.miss_rate or args.false_alarm_rate:
         if args.batch is not None:
@@ -259,8 +282,12 @@ def _write_chart(path: str, rows: list[dict], title: str) -> None:
 
 
 def cmd_oc(args: argparse.Namespace) -> tuple[dict, str]:
-    plan = SinglePlan(args.n, args.c)
     rates = args.rates if args.rates else _default_rates(args.max_rate, args.points)
+    if args.double_plan is not None:
+        return _oc_double(args, rates)
+    if args.n is None or args.c is None:
+        raise ValueError("give --n and --c for a single plan, or --double-plan")
+    plan = SinglePlan(args.n, args.c)
     rows = oc_curve(plan, rates, args.batch)
     payload = {"n": plan.n, "c": plan.c, "lot_size": args.batch, "curve": rows}
     if args.batch is None:
@@ -278,6 +305,52 @@ def cmd_oc(args: argparse.Namespace) -> tuple[dict, str]:
     text = head + "\n\n" + table
     if args.chart:
         fine = oc_curve(plan, _default_rates(max(rates), 201), args.batch)
+        _write_chart(args.chart, fine, head)
+        payload["chart"] = args.chart
+        text += f"\n\nChart written to {args.chart}."
+    return payload, text
+
+
+def _double_rows(plan: DoublePlan, rates: Sequence[float], batch: int | None) -> list[dict]:
+    rows = []
+    for rate in rates:
+        if batch is None:
+            rows.append({"rate": rate, "accept": plan.accept_prob(rate), "asn": plan.asn(rate)})
+        else:
+            bad = min(batch, max(0, round(rate * batch)))
+            rows.append(
+                {
+                    "rate": bad / batch,
+                    "bad": bad,
+                    "accept": plan.accept_prob_lot(batch, bad),
+                    "asn": plan.asn_lot(batch, bad),
+                }
+            )
+    return rows
+
+
+def _oc_double(args: argparse.Namespace, rates: Sequence[float]) -> tuple[dict, str]:
+    plan = args.double_plan
+    rows = _double_rows(plan, rates, args.batch)
+    payload = {"double": plan.to_dict(), "lot_size": args.batch, "curve": rows}
+    if args.batch is None:
+        table = md_table(
+            ["error rate", "P(accept)", "average records inspected"],
+            [[r["rate"], r["accept"], r["asn"]] for r in rows],
+        )
+    else:
+        table = md_table(
+            ["bad records", "error rate", "P(accept)", "average records inspected"],
+            [[r["bad"], r["rate"], r["accept"], r["asn"]] for r in rows],
+        )
+    head = (
+        f"Operating characteristic of the double plan n1 = {plan.n1}, c1 = {plan.c1}, "
+        f"r1 = {plan.r1}, n2 = {plan.n2}, c2 = {plan.c2}"
+    )
+    head += "." if args.batch is None else f", batch of {args.batch}."
+    text = head + "\n\n" + table
+    if args.chart:
+        fine = _double_rows(plan, _default_rates(max(rates), 201), args.batch)
         _write_chart(args.chart, fine, head)
         payload["chart"] = args.chart
         text += f"\n\nChart written to {args.chart}."
@@ -345,6 +418,25 @@ def cmd_bound(args: argparse.Namespace) -> tuple[dict, str]:
             f"{fmt(insp.true_rate(bad / n), 5)}, between {fmt(fixed[0], 5)} and "
             f"{fmt(fixed[1], 5)}.",
         ]
+    if args.calibration is not None:
+        missed, known_bad, alarms, known_good = args.calibration
+        est = estimate_inspector(missed, known_bad, alarms, known_good, conf)
+        wide = corrected_bounds_estimated(bad, n, missed, known_bad, alarms, known_good, conf)
+        payload["inspector_estimated"] = {
+            "miss_rate": est["miss_rate"],
+            "miss_interval": list(est["miss_interval"]),
+            "false_alarm_rate": est["false_alarm_rate"],
+            "false_alarm_interval": list(est["false_alarm_interval"]),
+            "interval": list(wide),
+        }
+        lines += [
+            "",
+            f"Inspector calibration: missed {missed} of {known_bad} known bad records (miss rate "
+            f"{fmt(est['miss_rate'])}), flagged {alarms} of {known_good} known good ones (false "
+            f"alarm rate {fmt(est['false_alarm_rate'])}). Allowing for the uncertainty in both, "
+            f"the true error rate is between {fmt(wide[0], 5)} and {fmt(wide[1], 5)} "
+            "(conservative).",
+        ]
     if args.batch is not None:
         low, high = hypergeom_bound(bad, n, args.batch, conf)
         _, high_one = hypergeom_bound(bad, n, args.batch, conf, "upper")
@@ -382,7 +474,7 @@ def cmd_sequential(args: argparse.Namespace) -> tuple[dict, str]:
     plan = SequentialPlan(
         args.acceptable, args.rejectable, args.producer_risk, args.consumer_risk, args.truncate
     )
-    rates = [0.0, args.acceptable, plan.slope, args.rejectable]
+    rates = args.rates or [0.0, args.acceptable, plan.slope, args.rejectable]
     rows = []
     for rate in rates:
         if args.batch is None:
@@ -575,9 +667,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_format(plan)
     plan.set_defaults(func=cmd_plan)
 
-    oc = sub.add_parser("oc", help="operating characteristic table of a single plan")
-    oc.add_argument("--n", type=int, required=True, help="sample size")
-    oc.add_argument("--c", type=int, required=True, help="acceptance number")
+    oc = sub.add_parser("oc", help="operating characteristic of a single or double plan")
+    oc.add_argument("--n", type=int, default=None, help="sample size")
+    oc.add_argument("--c", type=int, default=None, help="acceptance number")
+    oc.add_argument(
+        "--double-plan", type=_double_spec, default=None, help="double plan n1,c1,r1,n2,c2"
+    )
     oc.add_argument("--batch", type=int, default=None, help="batch size (hypergeometric model)")
     oc.add_argument("--rates", type=_rate_list, default=None, help="comma-separated error rates")
     oc.add_argument("--max-rate", type=_rate, default=0.10, help="largest rate in the table")
@@ -594,6 +689,12 @@ def build_parser() -> argparse.ArgumentParser:
     bound.add_argument("--confidence", type=float, default=0.95, help="confidence level")
     bound.add_argument("--target", type=_rate, default=None, help="error rate the batch must meet")
     _add_inspector(bound)
+    bound.add_argument(
+        "--calibration",
+        type=_calibration,
+        default=None,
+        help="inspector checked on known records: missed,known_bad,false_alarms,known_good",
+    )
     _add_format(bound)
     bound.set_defaults(func=cmd_bound)
 
@@ -602,6 +703,7 @@ def build_parser() -> argparse.ArgumentParser:
     seq.add_argument("--truncate", type=int, default=None, help="stop after this many records")
     seq.add_argument("--batch", type=int, default=None, help="batch size (finite batch)")
     seq.add_argument("--rows", type=int, default=None, help="list decision numbers up to this n")
+    seq.add_argument("--rates", type=_rate_list, default=None, help="error rates to tabulate")
     _add_format(seq)
     seq.set_defaults(func=cmd_sequential)
 

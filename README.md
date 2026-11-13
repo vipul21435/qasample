@@ -155,8 +155,11 @@ Inspector with miss rate 0.2000 and false alarm rate 0: a batch at 0.0100 looks 
 | designed for this inspector | 166 | 3 | 0.0452 | 0.0979 |
 ```
 
-Every command takes `--format json`. The same functions are available from Python; see
-`examples/quickstart.py`.
+`oc --double-plan n1,c1,r1,n2,c2` tabulates a double plan, `sequential --rates` chooses the rates
+of the exact table, and `bound --calibration missed,known_bad,false_alarms,known_good` widens the
+interval for an inspector whose error rates were themselves estimated on records with known
+answers. Every command takes `--format json` and can be run as `python -m qasample`. The same
+functions are available from Python; see `examples/quickstart.py`.
 
 ## How it works
 
