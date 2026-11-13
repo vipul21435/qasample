@@ -268,7 +268,7 @@ def _write_chart(path: str, rows: list[dict], title: str) -> None:
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError as exc:  # pragma: no cover - depends on the environment
-        raise ValueError("the chart needs matplotlib: pip install 'qasample[plot]'") from exc
+        raise ValueError("the chart needs matplotlib: pip install matplotlib") from exc
     fig, ax = plt.subplots(figsize=(6.4, 4.0))
     ax.plot([r["rate"] for r in rows], [r["accept"] for r in rows], color="#1f5fa8", lw=1.8)
     ax.set_xlabel("batch error rate")
