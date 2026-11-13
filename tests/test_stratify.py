@@ -75,6 +75,12 @@ def test_allocation_errors():
         allocate({"a": 10}, 5, "neyman", {"a": 1.5})
     with pytest.raises(ValueError):
         allocate({"a": -1}, 0)
+    with pytest.raises(ValueError):
+        allocate({"a": 10}, 5, minimum=-1)
+    with pytest.raises(ValueError):
+        allocate({"a": 10}, -5, minimum=0)
+    assert allocate({"a": 0, "b": 10}, 4) == {"a": 0, "b": 4}
+    assert allocate({"a": 10, "b": 10}, 0, minimum=0) == {"a": 0, "b": 0}
 
 
 def test_combined_estimate_by_hand():

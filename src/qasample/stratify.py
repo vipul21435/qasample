@@ -34,6 +34,8 @@ def allocate(
         raise ValueError("no strata given")
     if any(size < 0 for size in sizes.values()):
         raise ValueError("stratum sizes must be non-negative")
+    if minimum < 0 or total < 0:
+        raise ValueError("total and minimum must be non-negative")
     names = list(sizes)
     lower = {h: min(minimum, sizes[h]) for h in names}
     if total > sum(sizes.values()):
