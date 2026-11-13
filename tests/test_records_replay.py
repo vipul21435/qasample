@@ -48,6 +48,23 @@ def test_json_booleans_and_numbers(tmp_path):
     assert load_records(path, "bad").flags == [True, False, False, True, False]
 
 
+def test_odd_values_do_not_break_the_reader(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    lines = ['{"r": NaN}', '{"r": Infinity}', '{"r": [1, 2]}', '{"r": {"a": 1}}', '{"r": 2.5}']
+    lines.append('{"r": "  PASS "}')
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    rec = load_records(path, "r")
+    assert rec.flags == [True, True, True, True, True, False]
+    assert rec.categories["nan"] == 1 and rec.categories["2.5"] == 1
+
+
+def test_csv_with_byte_order_mark_and_short_rows(tmp_path):
+    path = tmp_path / "audit.csv"
+    path.write_bytes("\ufeffresult,note\nfail,x\npass\n".encode())
+    rec = load_records(path, "result")
+    assert rec.flags == [True, False]
+
+
 def test_explicit_bad_and_good_values(tmp_path):
     path = tmp_path / "audit.csv"
     path.write_text("verdict\nreject\naccept\nunsure\n", encoding="utf-8")

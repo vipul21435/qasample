@@ -19,7 +19,7 @@ def _norm(value: Any) -> str:
         return ""
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, float) and value == int(value):
+    if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value).strip().lower()
 
@@ -57,7 +57,7 @@ def read_rows(path: str | Path) -> list[dict[str, Any]]:
     path = Path(path)
     rows: list[dict[str, Any]] = []
     if path.suffix.lower() in (".jsonl", ".ndjson", ".json"):
-        with path.open(encoding="utf-8") as handle:
+        with path.open(encoding="utf-8-sig") as handle:
             for number, line in enumerate(handle, start=1):
                 if not line.strip():
                     continue
@@ -69,7 +69,7 @@ def read_rows(path: str | Path) -> list[dict[str, Any]]:
                     raise ValueError(f"{path}: line {number} is not a JSON object")
                 rows.append(row)
         return rows
-    with path.open(encoding="utf-8", newline="") as handle:
+    with path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         rows.extend(dict(row) for row in reader)
     return rows
